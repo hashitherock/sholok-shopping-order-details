@@ -2033,6 +2033,28 @@ textarea:focus {
 </style>
 
 
+<style id="layout-polish-css">
+/* Step 3 polish: layout overflow, focus/active states, layering. Design unchanged. */
+html,body{max-width:100%;overflow-x:hidden}
+*,*::before,*::after{box-sizing:border-box}
+img,svg,video{max-width:100%;height:auto}
+.main-grid{grid-template-columns:minmax(0,1fr) 350px}
+.left-column,.right-column,.card,.card-body,.info-grid>*,.shipment-info-grid>*,.header-meta>*{min-width:0}
+.info-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.table-wrapper{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.info-row,.info-row *{overflow-wrap:anywhere}
+.shipment-detail-box,.doc-modal-body{overflow-x:auto}
+.btn,button{cursor:pointer;transition:background-color .15s,border-color .15s,box-shadow .15s,transform .05s}
+.btn:active,button:active:not(:disabled){transform:translateY(1px)}
+button:disabled,.btn:disabled{opacity:.55;cursor:not-allowed}
+a:focus-visible,button:focus-visible,.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #16a34a;outline-offset:2px}
+select,input,textarea{font:inherit;max-width:100%}
+.modal-overlay{z-index:1000}.doc-modal-overlay{z-index:1100}.toast{z-index:2000}
+.modal{max-width:calc(100vw - 20px)}
+@media(max-width:1250px){.main-grid{grid-template-columns:minmax(0,1fr)}.right-column{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.info-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:650px){.actions{flex-wrap:wrap}.actions .btn{flex:1 1 auto}}
+</style>
 </head>
 
 

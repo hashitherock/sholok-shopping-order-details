@@ -4835,11 +4835,6 @@ let currentDeliveryAddress = {
     label: "HOME"
 };
 
-function money(value) {
-    return "৳" + Number(value || 0).toLocaleString("en-BD", {
-        maximumFractionDigits: 0
-    });
-}
 
 function numberFromText(value) {
     const n = parseFloat(String(value || "").replace(/[^\d.-]/g, ""));
@@ -5498,11 +5493,11 @@ function closeNotificationModal() {
 
 function sendCustomerNotification() {
     const channels=[];
-    if(document.getElementById('manualEmail').checked)channels.push('Email');
-    if(document.getElementById('manualSms').checked)channels.push('SMS');
-    if(document.getElementById('manualPush').checked)channels.push('Push');
-    const message=document.getElementById('manualNotificationMessage').value.trim();
-    const type=document.getElementById('manualNotificationType').value;
+    if(document.getElementById('manualEmail')?.checked)channels.push('Email');
+    if(document.getElementById('manualSms')?.checked)channels.push('SMS');
+    if(document.getElementById('manualPush')?.checked)channels.push('Push');
+    const message=(document.getElementById('manualNotificationMessage')?.value||'').trim();
+    const type=(document.getElementById('manualNotificationType')?.value||'');
     const priority=document.getElementById('manualNotificationPriority')?.value||'Normal';
     if(!channels.length){showToast('Select at least one notification channel.');return;}
     if(!message){showToast('Please write a notification message.');return;}
@@ -5637,22 +5632,19 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Shipment Change Status buttons use their explicit shipment ID/status
     // so each button always opens the correct shipment.
-    document.querySelectorAll(".shipment-change-btn").forEach(function(button) {
-        button.removeAttribute("type");
-    });
+
 });
 
 document.addEventListener("keydown", function(event) {
     if (event.key !== "Escape") return;
 
-    closeShipmentModal();
-    closeOrderStatusModal();
-    closeShipmentStatusModal();
-    closePaymentModal();
-    closeNotificationModal();
-    closeDeliveryAddressModal();
-    closeShipmentDetailsModal();
-    closeShipmentTrackingModal();
+    ["closeShipmentModal","closeOrderStatusModal","closeShipmentStatusModal","closePaymentModal",
+     "closeNotificationModal","closeNotificationResultModal","closeDeliveryAddressModal",
+     "closeShipmentDetailsModal","closeShipmentTrackingModal","closeOrderDocument"]
+        .forEach(function(name){
+            try { if (typeof window[name] === "function") window[name](); }
+            catch (err) { console.warn(name + " failed", err); }
+        });
 });
 
 
@@ -5722,12 +5714,7 @@ function openPaymentReceiptList(){
 }
 function getReceiptProducts(id){ if(id==='customer') return orderDocumentData.products; const map={sholok:'SHP-20260820-00453-1',abc:'SHP-20260820-00453-2',tech:'SHP-20260820-00453-3'}; const s=getShipmentById(map[id]); return s?s.products:[]; }
 function getReceiptShipment(id){const map={sholok:'SHP-20260820-00453-1',abc:'SHP-20260820-00453-2',tech:'SHP-20260820-00453-3'}; return map[id]?getShipmentById(map[id]):null;}
-/*function buildReceiptDocument(id){
-    syncCustomerDeliverySource();
- const s=getReceiptShipment(id), products=getReceiptProducts(id); const subtotal=products.reduce((a,p)=>a+p.price*p.qty,0); const delivery=s?s.deliveryCharge:orderDocumentData.shipping; const total=subtotal+delivery; const title=id==='customer'?'CUSTOMER PAYMENT RECORD':'PAYMENT RECORD'; const party=id==='customer'?'Customer Payment':(s?s.source:'Fulfillment');
- const rows=products.map(p=>`<tr><td>${p.name}<div style="font-size:11px;color:#64748b">SKU: ${p.sku}</div></td><td>${p.qty}</td><td>${money(p.price*p.qty)}</td></tr>`).join('');
- return `<div class="doc-paper"><div class="doc-top"><div><div class="doc-logo">SHOLOK</div><!--<small>SHOPPING & MARKETPLACE</small>--></div><div class="doc-heading"><h1>${title}</h1><span>${id==='customer'?'Order':'Shipment'} #${id==='customer'?orderDocumentData.orderId:s.id}</span></div></div><div class="payment-pending">⏳ PAYMENT PENDING</div><hr class="doc-divider"><div class="doc-grid"><div class="doc-box"><div class="doc-label">Customer Information</div><div class="doc-value"><strong>${orderDocumentData.customer}</strong><br>Customer ID: ${orderDocumentData.customerId||'Not provided'}<br>${orderDocumentData.email}<br>${orderDocumentData.phone}<br>${deliveryAddressText(getStoredDeliveryAddress())}</div></div><div class="doc-box"><div class="doc-label">Receipt Information</div><div class="doc-value">Receipt Type: <strong>${party}</strong><br>Order ID: <strong>${orderDocumentData.orderId}</strong><br>${s?'Shipment ID: <strong>'+s.id+'</strong><br>Fulfillment: <strong>'+s.source+'</strong><br>':'Receipt Scope: <strong>Entire Order</strong><br>'}Payment Method: <strong>${orderDocumentData.paymentMethod}</strong><br>Status: <strong>Pending</strong></div></div></div><table class="doc-table"><thead><tr><th>Product</th><th>Qty</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table><div class="payment-summary"><div class="pay-row"><span>Subtotal</span><strong>${money(subtotal)}</strong></div><div class="pay-row"><span>Delivery Charge</span><strong>${money(delivery)}</strong></div><div class="pay-row total"><span>Total</span><strong>${money(total)}</strong></div></div><div class="doc-footer">Cash on Delivery. Payment remains <strong>Pending</strong> until the applicable delivery/payment condition is completed. This receipt is generated for ${party.toLowerCase()} and contains only the relevant products/financial details.</div></div>`;
-}*/
+
 
 /* Payment Records */
 function buildReceiptDocument(id){
@@ -6631,9 +6618,7 @@ function printAllShipmentDocuments(type){
     setTimeout(function(){ window.print(); }, 120);
 }
 
-document.addEventListener("keydown", function(event){
-    if(event.key === "Escape") closeOrderDocument();
-});
+
 
 </script>
 
@@ -6695,10 +6680,10 @@ document.addEventListener("keydown", function(event){
 function closeNotificationResultModal(){const m=document.getElementById('notificationResultModal');if(m)m.classList.remove('active');document.body.style.overflow='';}
 function renderCustomerNotificationPreview(){
  const body=document.getElementById('notificationResultBody');if(!body)return;
- const message=document.getElementById('manualNotificationMessage').value.trim();
- const type=document.getElementById('manualNotificationType').value;
- const channels=[];if(document.getElementById('manualEmail').checked)channels.push('Email');if(document.getElementById('manualSms').checked)channels.push('SMS');if(document.getElementById('manualPush').checked)channels.push('Push');
- const context=document.getElementById('notificationContext').textContent||'Sholok Order Update';
+ const message=(document.getElementById('manualNotificationMessage')?.value||'').trim();
+ const type=(document.getElementById('manualNotificationType')?.value||'');
+ const channels=[];if(document.getElementById('manualEmail')?.checked)channels.push('Email');if(document.getElementById('manualSms')?.checked)channels.push('SMS');if(document.getElementById('manualPush')?.checked)channels.push('Push');
+ const context=document.getElementById('notificationContext')?.textContent||'Sholok Order Update';
  body.innerHTML='<div class="notification-preview-shell"><div class="notification-preview-top"><div class="notification-app-icon">🔔</div><div><strong>Sholok Services</strong><small>'+escapeHtml(type)+' · just now</small></div></div><div class="notification-preview-message">'+escapeHtml(message)+'</div><div class="notification-preview-meta">'+channels.map(c=>'<span class="notification-chip">'+escapeHtml(c)+'</span>').join('')+'<span class="notification-chip">'+escapeHtml(context)+'</span></div></div><div class="notification-provider-note"><strong>Delivery status: Sent</strong><br>Your notification is marked as sent.</div>';
 }
 </script>

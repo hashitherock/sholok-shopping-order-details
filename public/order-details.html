@@ -4652,12 +4652,12 @@ select,input,textarea{font:inherit;max-width:100%}
 
             <div class="form-group">
                 <label class="form-label">Recipient Name</label>
-                <input id="deliveryRecipientName" class="form-control" value="Hasina Begum">
+                <input id="deliveryRecipientName" class="form-control" value="Hasina Begum" oninput="previewDeliveryAddress()">
             </div>
 
             <div class="form-group">
                 <label class="form-label">Mobile Number</label>
-                <input id="deliveryRecipientMobile" class="form-control" value="+880 1XXXXXXXXX">
+                <input id="deliveryRecipientMobile" class="form-control" value="+880 1XXXXXXXXX" oninput="previewDeliveryAddress()">
             </div>
 
             <div class="form-group">
@@ -4689,8 +4689,8 @@ select,input,textarea{font:inherit;max-width:100%}
             <div class="form-group full">
                 <label class="form-label">Select a label for effective delivery</label>
                 <div class="check-grid">
-                    <label class="check-card"><input type="radio" name="deliveryLabel" value="OFFICE" id="deliveryLabelOffice"> OFFICE</label>
-                    <label class="check-card"><input type="radio" name="deliveryLabel" value="HOME" id="deliveryLabelHome"> HOME</label>
+                    <label class="check-card"><input type="radio" name="deliveryLabel" value="OFFICE" id="deliveryLabelOffice" onchange="previewDeliveryAddress()"> OFFICE</label>
+                    <label class="check-card"><input type="radio" name="deliveryLabel" value="HOME" id="deliveryLabelHome" onchange="previewDeliveryAddress()"> HOME</label>
                 </div>
             </div>
 
@@ -4818,6 +4818,23 @@ let toastTimer;
 let currentShipmentId = "";
 let currentShipmentStatus = "Preparing";
 let currentOrderStatus = "Confirmed";
+const volatileStorage = new Map();
+function readBrowserValue(key, fallback) {
+    try {
+        const raw = volatileStorage.has(key) ? volatileStorage.get(key) : localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch { return fallback; }
+}
+function writeBrowserValue(key, value) {
+    const raw = JSON.stringify(value);
+    volatileStorage.set(key, raw);
+    try { localStorage.setItem(key, raw); }
+    catch { showToast("Changes are available for this session; browser storage is unavailable."); }
+}
+function readBrowserRecords(key) {
+    const records = readBrowserValue(key, []);
+    return Array.isArray(records) ? records.filter(item => item && typeof item === "object" && !Array.isArray(item)) : [];
+}
 
 const PAYMENT_METHOD = "Cash on Delivery";
 const ORDER_ID = "#SHL-20260820-00453";
@@ -4922,33 +4939,19 @@ function updatePaymentUI(status) {
    ========================================================= */
 
 function getStoredDeliveryAddress() {
-    try {
-        const saved = localStorage.getItem(DELIVERY_ADDRESS_STORAGE_KEY);
-        if (!saved) return currentDeliveryAddress;
-        const parsed = JSON.parse(saved);
-        // Migrate the older Area/Thana/District address structure to the new Division/City/Area model.
-        if (!parsed.division || !parsed.city || !parsed.area) return currentDeliveryAddress;
-        return parsed;
-    } catch (error) {
-        return currentDeliveryAddress;
-    }
+    const address = readBrowserValue(DELIVERY_ADDRESS_STORAGE_KEY, null);
+    const fields = ["recipient", "mobile", "addressLine", "area", "city", "division", "label"];
+    return address && fields.every(key => typeof address[key] === "string") &&
+        address.division && address.city && address.area ? address : currentDeliveryAddress;
 }
-
 function setStoredDeliveryAddress(address) {
-    localStorage.setItem(DELIVERY_ADDRESS_STORAGE_KEY, JSON.stringify(address));
+    writeBrowserValue(DELIVERY_ADDRESS_STORAGE_KEY, address);
 }
-
 function getNotificationHistory() {
-    try {
-        const saved = localStorage.getItem(NOTIFICATION_HISTORY_STORAGE_KEY);
-        return saved ? JSON.parse(saved) : [];
-    } catch (error) {
-        return [];
-    }
+    return readBrowserRecords(NOTIFICATION_HISTORY_STORAGE_KEY);
 }
-
 function setNotificationHistory(history) {
-    localStorage.setItem(NOTIFICATION_HISTORY_STORAGE_KEY, JSON.stringify(history));
+    writeBrowserValue(NOTIFICATION_HISTORY_STORAGE_KEY, history);
 }
 
 function syncCustomerDeliverySource() {
@@ -4958,7 +4961,11 @@ function syncCustomerDeliverySource() {
 }
 
 function deliveryAddressText(address) {
-    return [address.addressLine, address.area ? "Area: " + address.area : "", address.city ? "<br>City / District: " + address.city : "", address.division ? "Division: " + address.division : "", address.label ? "<br>Label: " + address.label : ""].filter(Boolean).join(", ");
+    return [address.addressLine, address.area ? "Area: " + address.area : "", address.city ? "City / District: " + address.city : "", address.division ? "Division: " + address.division : "", address.label ? "Label: " + address.label : ""].filter(Boolean).join(", ");
+}
+
+function deliveryAddressDocumentHtml(address) {
+    return escapeHtml(deliveryAddressText(address)).replace(/, City \/ District:/g, ", <br>City / District:").replace(/, Label:/g, ", <br>Label:");
 }
 
 function deliveryAddressHtml(address) {
@@ -5065,7 +5072,7 @@ function saveDeliveryAddress() {
         return;
     }
 
-    if (deliveryAddressText(oldAddress) === deliveryAddressText(newAddress)) {
+    if (Object.keys(newAddress).every(key => oldAddress[key] === newAddress[key])) {
         showToast("No delivery address changes detected.");
         return;
     }
@@ -5137,7 +5144,7 @@ function renderNotificationHistory() {
         );
     });
 
-    count.textContent = all.length + " Records";
+    if (count) count.textContent = all.length + " Records";
 
     if (!history.length) {
         tbody.innerHTML = '<tr><td colspan="6"><div class="history-empty">No notification history found.</div></td></tr>';
@@ -5145,7 +5152,7 @@ function renderNotificationHistory() {
     }
 
     tbody.innerHTML = history.map(function(item) {
-        const channelClass = String(item.channel).toLowerCase();
+        const channelClass = ["email", "sms", "push"].includes(String(item.channel).toLowerCase()) ? String(item.channel).toLowerCase() : "";
         return '<tr>' +
             '<td><span class="type-badge">' + escapeHtml(item.notificationType) + '</span></td>' +
             '<td><span class="history-channel ' + channelClass + '">' + escapeHtml(item.channel) + '</span></td>' +
@@ -5288,11 +5295,10 @@ function saveOrderStatus() {
     currentOrderStatus=next;
     const statusEl=document.getElementById('headerOrderStatus');
     if(statusEl){statusEl.className='status status-'+statusClass(next);statusEl.innerHTML='<span class="status-label">Order Status</span><span class="status-value">'+escapeHtml(next)+'</span>';}
-    if(next!=='Completed' && next!=='Delivered') updatePaymentUI('Pending');
     saveOrderState();
     addTimeline('Order Status Changed','Order status changed from '+previous+' to '+next+'.');
     closeOrderStatusModal();
-    if(channels.length && message) openNotificationComposer(ORDER_ID,'Order status changed to '+next+'.',message,'Order Update');
+    if(channels.length && message) openNotificationComposer(ORDER_ID,'Order status changed to '+next+'.',message,'Order Update',channels);
     else showToast('Order status updated successfully.');
 }
 
@@ -5369,9 +5375,8 @@ function saveShipmentStatus() {
     saveOrderState();
     addTimeline('Shipment #'+currentShipmentId+' '+next,'Shipment status changed from '+oldStatus+' to '+next+'. Tracking event recorded.');
     if(allShipmentsDelivered()) addTimeline('Payment Ready for Collection','All shipments are delivered. Cash on Delivery can now be marked as Paid.');
-    else if(next!=='Delivered') updatePaymentUI('Pending');
     closeShipmentStatusModal();
-    if(mode==='notify' && channels.length && message) openNotificationComposer('Shipment #'+currentShipmentId,'Shipment status changed to '+next+'.',message,'Shipment Update');
+    if(mode==='notify' && channels.length && message) openNotificationComposer('Shipment #'+currentShipmentId,'Shipment status changed to '+next+'.',message,'Shipment Update',channels);
     else showToast('Shipment status updated successfully.');
 }
 
@@ -5407,7 +5412,13 @@ function statusClass(status) {
         "Pending": "pending",
         "Confirmed": "confirmed",
         "Preparing": "preparing",
-        "Ready for Pickup": "Pickup Scheduled",
+        "Ready for Pickup": "transit",
+        "Processing": "preparing",
+        "Shipment Created": "preparing",
+        "Pickup Scheduled": "transit",
+        "Delivery Failed": "cancelled",
+        "Delivery Rescheduled": "transit",
+        "Return to Sender": "cancelled",
         "Picked Up": "transit",
         "In Transit": "transit",
         "Out for Delivery": "transit",
@@ -5432,13 +5443,17 @@ function openPaymentModal() {
         return option.text === "Paid";
     });
 
-    const eligible = allShipmentsDelivered() || currentOrderStatus === "Completed";
+    const eligible = allShipmentsDelivered() || currentOrderStatus === "Completed" || currentOrderStatus === "Delivered";
 
     if (paidOption) paidOption.disabled = !eligible;
 
-    select.value = eligible ? "Paid" : "Pending";
+    const payment = readBrowserValue(ORDER_STATE_STORAGE_KEY + '_payment', null);
+    const currentStatus = document.getElementById("paymentStatusBadge")?.textContent.trim() || "Pending";
+    select.value = currentStatus === "Pending" && eligible ? "Paid" : currentStatus;
+    document.getElementById("paymentReference").value = payment?.reference || "";
+    document.getElementById("paymentNote").value = payment?.note || "";
     document.getElementById("paymentMethodSelect").value = PAYMENT_METHOD;
-    document.getElementById("paymentAmount").value = eligible ? getGrandTotal() : 0;
+    document.getElementById("paymentAmount").value = payment?.amount ?? (eligible ? getGrandTotal() : 0);
 
     document.getElementById("paymentModal").classList.add("active");
     document.body.style.overflow = "hidden";
@@ -5452,7 +5467,9 @@ function closePaymentModal() {
 function savePaymentStatus() {
     const status=document.getElementById('paymentStatusSelect').value;
     const reference=document.getElementById('paymentReference').value.trim();
-    const amount=numberFromText(document.getElementById('paymentAmount').value);
+    const note=document.getElementById('paymentNote').value.trim();
+    const rawAmount=document.getElementById('paymentAmount').value.trim();
+    const amount=rawAmount === '' ? NaN : Number(rawAmount);
     const eligible=allShipmentsDelivered() || currentOrderStatus==='Completed' || currentOrderStatus==='Delivered';
     const grandTotal=getGrandTotal();
     const oldStatus=(document.getElementById('paymentStatusBadge')||{}).textContent?.trim() || 'Pending';
@@ -5468,8 +5485,8 @@ function savePaymentStatus() {
     const paid=document.getElementById('paidAmount'); const due=document.getElementById('dueAmount');
     if(paid) paid.textContent=money(['Paid','Refunded'].includes(status)?(status==='Refunded'?0:amount):['Partially Paid','Partially Refunded'].includes(status)?amount:0);
     if(due) due.textContent=money(Math.max(0,grandTotal-numberFromText(paid?.textContent||0)));
-    try{localStorage.setItem(ORDER_STATE_STORAGE_KEY+'_payment',JSON.stringify({status,amount,reference,updatedAt:new Date().toISOString(),actor:ADMIN_ACTOR,source:'Admin Panel'}));}catch(e){}
-    addTimeline('Payment Status Updated','Payment status changed from '+oldStatus+' to '+status+'. Amount: '+money(amount)+(reference?' · Reference: '+reference:'')+'. This records an admin-entered status; gateway verification is not connected.');
+    writeBrowserValue(ORDER_STATE_STORAGE_KEY+'_payment',{status,amount,reference,note,updatedAt:new Date().toISOString(),actor:ADMIN_ACTOR,source:'Admin Panel'});
+    addTimeline('Payment Status Updated','Payment status changed from '+oldStatus+' to '+status+'. Amount: '+money(amount)+(reference?' · Reference: '+reference:'')+(note?' · Note: '+note:'')+'. This records an admin-entered status; gateway verification is not connected.');
     saveOrderState(); closePaymentModal(); showToast('Payment status updated and recorded.');
 }
 
@@ -5477,7 +5494,13 @@ function savePaymentStatus() {
    CUSTOMER NOTIFICATION
    ========================================================= */
 
-function openNotificationComposer(context, contextText, message, type) {
+function openNotificationComposer(context, contextText, message, type, channels) {
+    if (Array.isArray(channels)) {
+        ["Email", "SMS", "Push"].forEach((channel, index) => {
+            const field = document.getElementById(["manualEmail", "manualSms", "manualPush"][index]);
+            if (field) field.checked = channels.includes(channel);
+        });
+    }
     document.getElementById("notificationContext").textContent = context;
     document.getElementById("notificationContextText").textContent = contextText;
     document.getElementById("manualNotificationMessage").value = message || "";
@@ -5538,7 +5561,7 @@ function addNote() {
     const input=document.getElementById('noteInput'); const note=input.value.trim();
     if(!note){showToast('Please write a note first.');return;}
     const record={id:makeTrackingCode('NOTE'),noteType:'Admin Note',note,actor:ADMIN_ACTOR,source:'Admin Panel',at:new Date().toISOString()};
-    try{const key=ORDER_STATE_STORAGE_KEY+'_notes';const notes=JSON.parse(localStorage.getItem(key)||'[]');notes.unshift(record);localStorage.setItem(key,JSON.stringify(notes.slice(0,300)));}catch(e){}
+    try{const key=ORDER_STATE_STORAGE_KEY+'_notes';const notes=readBrowserRecords(key);notes.unshift(record);writeBrowserValue(key,notes.slice(0,300));}catch(e){}
     input.value=''; addTimeline('Order Note Added',note); showToast('Order note saved to this browser and added to the timeline.');
 }
 
@@ -5579,9 +5602,9 @@ function showToast(message) {
 
 
 function restoreSavedOrderState(){
- const saved=readOrderState(); if(!saved)return;
- if(saved.orderStatus){currentOrderStatus=saved.orderStatus;const el=document.getElementById('headerOrderStatus');if(el){el.className='status status-'+statusClass(currentOrderStatus);el.innerHTML='<span class="status-label">Order Status</span><span class="status-value">'+escapeHtml(currentOrderStatus)+'</span>';}}
- if(Array.isArray(saved.shipments)){
+ const saved=readOrderState();
+ if(saved && ORDER_STATUSES.includes(saved.orderStatus)){currentOrderStatus=saved.orderStatus;const el=document.getElementById('headerOrderStatus');if(el){el.className='status status-'+statusClass(currentOrderStatus);el.innerHTML='<span class="status-label">Order Status</span><span class="status-value">'+escapeHtml(currentOrderStatus)+'</span>';}}
+ if(saved && Array.isArray(saved.shipments) && saved.shipments.length && saved.shipments.every(sh => sh && typeof sh.id === "string" && SHIPMENT_STATUSES.includes(sh.status) && Array.isArray(sh.products) && sh.products.every(p => p && typeof p.name === "string" && Number.isFinite(p.price) && Number.isFinite(p.qty)))){
    orderDocumentData.shipments=saved.shipments.map(sh=>({...sh,products:(sh.products||[]).map(p=>({...p}))}));
    const container=document.querySelector('.shipments');
    const template=container&&container.querySelector('.shipment');
@@ -5603,11 +5626,18 @@ function restoreSavedOrderState(){
    });
    const count=document.querySelector('.shipments-card .card-subtitle, .shipments-section .card-subtitle');if(count)count.textContent=orderDocumentData.shipments.length+' Shipments created for this Order';
  }
- const pay=(()=>{try{return JSON.parse(localStorage.getItem(ORDER_STATE_STORAGE_KEY+'_payment')||'null')}catch(e){return null}})();
- if(pay&&pay.status)updatePaymentUI(pay.status);
+ const pay=readBrowserValue(ORDER_STATE_STORAGE_KEY+'_payment',null);
+ if(pay && PAYMENT_STATUSES.includes(pay.status) && Number.isFinite(pay.amount) && pay.amount >= 0) {
+   updatePaymentUI(pay.status);
+   const paid = ['Paid','Partially Paid','Partially Refunded'].includes(pay.status) ? pay.amount : 0;
+   const paidEl = document.getElementById('paidAmount');
+   const dueEl = document.getElementById('dueAmount');
+   if(paidEl) paidEl.textContent=money(paid);
+   if(dueEl) dueEl.textContent=money(Math.max(0,getGrandTotal()-paid));
+ } else updatePaymentUI(saved && PAYMENT_STATUSES.includes(saved.paymentStatus) ? saved.paymentStatus : 'Pending');
 }
 function restoreTimeline(){
- try{const records=JSON.parse(localStorage.getItem(TIMELINE_STORAGE_KEY)||'[]');const timeline=document.querySelector('.timeline');if(!timeline)return;
+ try{const records=readBrowserRecords(TIMELINE_STORAGE_KEY);const timeline=document.querySelector('.timeline');if(!timeline)return;
  records.slice().reverse().forEach(r=>{const item=document.createElement('div');item.className='timeline-item completed activity-added';const dt=new Date(r.at);const ts=isNaN(dt)?r.at:dt.toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});item.innerHTML='<span class="timeline-dot"></span><div class="timeline-title">'+escapeHtml(r.title)+'</div><div class="timeline-description">'+escapeHtml(r.description)+'</div><div class="timeline-time">'+escapeHtml(ts)+' · '+escapeHtml(r.actor||'Admin')+' · '+escapeHtml(r.source||'Admin Panel')+'</div>';timeline.prepend(item);});
  }catch(e){console.warn('Timeline restore failed.',e)}
 }
@@ -5628,7 +5658,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
     renderNotificationHistory();
     calculateOrderTotals();
-    updatePaymentUI("Pending");
 
     // Shipment Change Status buttons use their explicit shipment ID/status
     // so each button always opens the correct shipment.
@@ -5658,7 +5687,7 @@ document.addEventListener("keydown", function(event) {
    SHIPMENT DETAILS / TRACKING / PAYMENT RECEIPTS
 ========================================================= */
 function shipmentFromButton(button){
-    const card=button.closest('.shipment');
+    const card=button?.closest('.shipment');
     return card ? getShipmentById(card.getAttribute('data-shipment-id')) : null;
 }
 function openShipmentDetailsModalFromButton(button){ const s=shipmentFromButton(button); if(s) openShipmentDetailsModal(s.id); }
@@ -5673,7 +5702,7 @@ function openShipmentDetailsModal(id){
     document.getElementById('shipmentDetailsBody').innerHTML=`
       <div class="shipment-detail-grid">
         <div class="shipment-detail-box"><h4>Shipment Information</h4><div class="detail-row"><span>Shipment ID</span><strong>${s.id}</strong></div><div class="detail-row"><span>Order ID</span><strong>${orderDocumentData.orderId}</strong></div><div class="detail-row"><span>Fulfillment</span><strong>${s.source}</strong></div><div class="detail-row"><span>Status</span><strong>${s.status}</strong></div><div class="detail-row"><span>Tracking Number</span><strong>${s.tracking}</strong></div></div>
-        <div class="shipment-detail-box"><h4>Delivery Information</h4><div class="detail-row"><span>Customer</span><strong>${orderDocumentData.customer}</strong></div><div class="detail-row"><span>Mobile</span><strong>${orderDocumentData.phone}</strong></div><div class="detail-row"><span>Customer Address</span><strong>${deliveryAddressText(getStoredDeliveryAddress())}</strong></div><div class="detail-row"><span>Courier</span><strong>${s.courier||'Pending'}</strong></div><div class="detail-row"><span>ETA</span><strong>${s.eta||'Pending'}</strong></div></div>
+        <div class="shipment-detail-box"><h4>Delivery Information</h4><div class="detail-row"><span>Customer</span><strong>${orderDocumentData.customer}</strong></div><div class="detail-row"><span>Mobile</span><strong>${orderDocumentData.phone}</strong></div><div class="detail-row"><span>Customer Address</span><strong>${deliveryAddressDocumentHtml(getStoredDeliveryAddress())}</strong></div><div class="detail-row"><span>Courier</span><strong>${s.courier||'Pending'}</strong></div><div class="detail-row"><span>ETA</span><strong>${s.eta||'Pending'}</strong></div></div>
       </div>
       <div class="shipment-detail-box"><h4>Shipment Products</h4><table class="shipment-products-table"><thead><tr><th>#</th><th>Product / SKU</th><th>Variant</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead><tbody>${productRows}</tbody></table><div class="detail-row"><span>Product Subtotal</span><strong>${money(total)}</strong></div><div class="detail-row"><span>Delivery Charge</span><strong>${money(s.deliveryCharge)}</strong></div><div class="detail-row"><span>Shipment Total</span><strong>${money(total+s.deliveryCharge)}</strong></div></div>
       <div class="shipment-detail-grid" style="margin-top:14px"><div class="shipment-detail-box"><h4>Fulfillment</h4><div class="detail-row"><span>Source</span><strong>${s.source}</strong></div><div class="detail-row"><span>Weight</span><strong>${s.weight||'—'}</strong></div><div class="detail-row"><span>Packages</span><strong>${s.packages||'—'}</strong></div></div><div class="shipment-detail-box"><h4>Documents</h4><div class="detail-row"><span>Packing Slip</span><strong>Available</strong></div><div class="detail-row"><span>Shipping Label</span><strong>Available</strong></div><div class="detail-row"><span>Payment Receipt</span><strong>Fulfillment Receipt</strong></div></div></div>`;
@@ -5686,6 +5715,10 @@ function trackingEvents(s){
  if(s.status==='In Transit'||s.status==='Delivered') base.push(['Picked Up','Courier picked up the shipment.','Aug 21, 2026 · 09:10 AM']);
  if(s.status==='In Transit'||s.status==='Delivered') base.push(['In Transit','Shipment is on the way to the delivery destination.','Aug 21, 2026 · 12:40 PM']);
  if(s.status==='Delivered') base.push(['Delivered','Delivered successfully to the customer.','Aug 21, 2026 · 04:20 PM']);
+ if (Array.isArray(s.events) && s.events.length) {
+   const recorded = s.events.slice().reverse().filter(event => event && typeof event.status === 'string');
+   return [...base.filter(event => event[2] !== 'Awaiting event'), ...recorded.map(event => [escapeHtml(event.status), 'Shipment status updated by '+escapeHtml(event.actor || 'Admin')+'.', escapeHtml(formatNotificationDate(event.at))])];
+ }
  return base;
 }
 function openShipmentTrackingModal(id){
@@ -5699,9 +5732,13 @@ function closeShipmentTrackingModal(){document.getElementById('shipmentTrackingM
 function closeShipmentTrackingOverlay(e){if(e.target.id==='shipmentTrackingModal')closeShipmentTrackingModal();}
 
 function buildReceiptCard(receipt){return `<div class="payment-receipt-card"><div><div class="receipt-title">${receipt.title}</div><div class="receipt-meta">${receipt.subtitle}</div></div><div class="receipt-actions"><button class="doc-btn secondary" type="button" onclick="openPaymentReceipt('${receipt.id}')">View</button><button class="doc-btn primary" type="button" onclick="printPaymentReceipt('${receipt.id}')">Print</button></div></div>`}
+function getCurrentPaymentStatus() {
+    const status = document.getElementById('paymentStatusBadge')?.textContent.trim();
+    return PAYMENT_STATUSES.includes(status) ? status : 'Pending';
+}
 function getPaymentReceipts(){
  return [
-  {id:'customer',title:'Customer Payment Record',subtitle:'Order-level · Payment pending · #'+orderDocumentData.orderId},
+  {id:'customer',title:'Customer Payment Record',subtitle:'Order-level · Payment '+getCurrentPaymentStatus().toLowerCase()+' · #'+orderDocumentData.orderId},
   {id:'sholok',title:'Sholok Owned — Fulfillment Payment Record',subtitle:'Shipment #SHP-20260820-00453-1 · Sholok Warehouse #01 · Payment pending'},
   {id:'abc',title:'ABC Fashion — Vendor Payment Record',subtitle:'Shipment #SHP-20260820-00453-2 · ABC Fashion · Payment pending'},
   {id:'tech',title:'Tech World — Vendor Payment Record',subtitle:'Shipment #SHP-20260820-00453-3 · Tech World · Payment pending'}
@@ -5721,11 +5758,14 @@ function buildReceiptDocument(id){
     syncCustomerDeliverySource();
 
     const s = getReceiptShipment(id);
+    if (id !== "customer" && !s) return "";
     const products = getReceiptProducts(id);
 
     const subtotal = products.reduce((a, p) => a + p.price * p.qty, 0);
     const delivery = s ? s.deliveryCharge : orderDocumentData.shipping;
     const total = subtotal + delivery;
+
+    const paymentStatus = id === 'customer' ? getCurrentPaymentStatus() : 'Pending';
 
     // Check whether this shipment belongs to a vendor
     // Sholok Warehouse #01 is treated as internal fulfillment
@@ -5784,7 +5824,7 @@ function buildReceiptDocument(id){
             </div>
 
             <div class="payment-pending">
-                ⏳ PAYMENT PENDING
+                ⏳ PAYMENT ${escapeHtml(paymentStatus.toUpperCase())}
             </div>
 
             <hr class="doc-divider">
@@ -5801,7 +5841,7 @@ function buildReceiptDocument(id){
                         Customer ID: ${orderDocumentData.customerId || 'Not provided'}<br>
                         Email: ${orderDocumentData.email}<br>
                         Phone: ${orderDocumentData.phone}<br>
-                        Address: ${deliveryAddressText(getStoredDeliveryAddress())}
+                        Address: ${deliveryAddressDocumentHtml(getStoredDeliveryAddress())}
                     </div>
                 </div>
 
@@ -5824,7 +5864,7 @@ function buildReceiptDocument(id){
                         ${shipmentInfo}
 
                         Payment Method: <strong>${orderDocumentData.paymentMethod}</strong><br>
-                        Status: <strong>Pending</strong>
+                        Status: <strong>${escapeHtml(paymentStatus)}</strong>
                     </div>
                 </div>
 
@@ -5864,9 +5904,8 @@ function buildReceiptDocument(id){
             </div>
 
             <div class="doc-footer">
-                Cash on Delivery. Payment remains
-                <strong>Pending</strong>
-                until the applicable delivery/payment condition is completed.
+                Cash on Delivery. Recorded payment status:
+                <strong>${escapeHtml(paymentStatus)}</strong>.
                 This receipt is generated for
                 ${party.toLowerCase()}
                 and contains only the relevant products/financial details.
@@ -5968,23 +6007,23 @@ const ADMIN_ACTOR = 'Admin';
 function saveOrderState(){
     try {
         const shipments = orderDocumentData.shipments.map(s => ({...s, products:(s.products||[]).map(p=>({...p}))}));
-        localStorage.setItem(ORDER_STATE_STORAGE_KEY, JSON.stringify({
+        writeBrowserValue(ORDER_STATE_STORAGE_KEY, {
             orderStatus: currentOrderStatus,
             paymentStatus: (document.getElementById('paymentStatusBadge')||{}).textContent || 'Pending',
             shipments: shipments,
             updatedAt: new Date().toISOString()
-        }));
+        });
     } catch(e) { console.warn('Order state could not be stored in this browser.', e); }
 }
 function readOrderState(){
-    try { const raw=localStorage.getItem(ORDER_STATE_STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
+    try { const state=readBrowserValue(ORDER_STATE_STORAGE_KEY,null); return state && typeof state === 'object' && !Array.isArray(state) ? state : null; }
     catch(e){ return null; }
 }
 function persistTimelineRecord(record){
     try {
-        const list=JSON.parse(localStorage.getItem(TIMELINE_STORAGE_KEY)||'[]');
+        const list=readBrowserRecords(TIMELINE_STORAGE_KEY);
         list.unshift(record);
-        localStorage.setItem(TIMELINE_STORAGE_KEY, JSON.stringify(list.slice(0,300)));
+        writeBrowserValue(TIMELINE_STORAGE_KEY, list.slice(0,300));
     } catch(e){ console.warn('Timeline could not be stored in this browser.', e); }
 }
 function validStatusTransition(kind, oldStatus, nextStatus){
@@ -6160,7 +6199,7 @@ function buildPackingSlip(shipment){
                     <div class="doc-value">
                         <strong>${orderDocumentData.customer}</strong><br>
                         Phone: ${orderDocumentData.phone}<br>
-                        Address: ${deliveryAddressText(getStoredDeliveryAddress())}
+                        Address: ${deliveryAddressDocumentHtml(getStoredDeliveryAddress())}
                     </div>
                 </div>
             </div>
@@ -6206,7 +6245,7 @@ function buildShippingLabel(shipment){
                     ${orderDocumentData.customer}
                 </div>
 				<div class="ship-address">
-                    Address: ${orderDocumentData.address}
+                    Address: ${deliveryAddressDocumentHtml(getStoredDeliveryAddress())}
                 </div>
                 <div class="ship-phone">📞 ${orderDocumentData.phone}</div>
             </div>
@@ -6254,7 +6293,7 @@ function buildShippingLabel(shipment){
             </div>
 
             <div style="display:flex;justify-content:space-between;margin-top:18px;font-size:13px">
-                <strong>Destination: Dhaka</strong>
+                <strong>Destination: ${escapeHtml(getStoredDeliveryAddress().city)}</strong>
                 <strong>COD: YES</strong>
             </div>
         </div>`;
@@ -6301,7 +6340,7 @@ function buildVendorInvoice(shipment, index){
                     <div class="inv-card-content">
                         <p><strong>${orderDocumentData.customer}</strong></p>
                         <p>Customer ID: ${orderDocumentData.customerId}</p>
-                        <p>Address: ${deliveryAddressText(getStoredDeliveryAddress())}</p>
+                        <p>Address: ${deliveryAddressDocumentHtml(getStoredDeliveryAddress())}</p>
                         <p>Dhaka, Bangladesh</p>
                         <p>Phone: ${orderDocumentData.phone}</p>
                     </div>
@@ -6314,7 +6353,7 @@ function buildVendorInvoice(shipment, index){
                         <!--<div class="kv-row"><span class="kv-key">Seller: </span><span class="kv-val">${shipment.source}</span></div>-->
                         <div class="kv-row"><span class="kv-key">Shipment ID: </span><span class="kv-val">${shipment.id}</span></div>
                         <div class="kv-row"><span class="kv-key">Payment Method: </span><span class="kv-val">${orderDocumentData.paymentMethod}</span></div>
-                        <!--<div class="kv-row"><span class="kv-key">Payment Status: </span><span class="inv-badge badge-pending">Pending</span></div>-->
+                        <!--<div class="kv-row"><span class="kv-key">Payment Status: </span><span class="inv-badge badge-pending">${escapeHtml(getCurrentPaymentStatus())}</span></div>-->
                     </div>
                 </div>
             </section>
@@ -6381,6 +6420,7 @@ function openOrderInvoicesList(){
 
 function openVendorInvoice(index){
     const shipment = orderDocumentData.shipments[index];
+    if (!shipment) { showToast("Invoice shipment was not found."); return; }
     const modal = document.getElementById("orderDocumentModal");
     const body = document.getElementById("orderDocBody");
     const title = document.getElementById("orderDocTitle");
@@ -6455,7 +6495,7 @@ function buildOrderInvoice(){
 					<div class="inv-card-content">
 						<p><strong>${orderDocumentData.customer}</strong></p>
 						<p>Customer ID: ${orderDocumentData.customerId || 'Not provided'}</p>
-						<p>Address: ${deliveryAddressText(getStoredDeliveryAddress())}</p>
+						<p>Address: ${deliveryAddressDocumentHtml(getStoredDeliveryAddress())}</p>
 						<p>Dhaka, Bangladesh</p>
 						<p>Phone: ${orderDocumentData.phone}</p>
 					</div>
@@ -6478,7 +6518,7 @@ function buildOrderInvoice(){
 						</div>
 						<div class="kv-row">
 							<span class="kv-key">Payment Status: </span>
-							<span class="inv-badge badge-pending">Pending</span>
+							<span class="inv-badge badge-pending">${escapeHtml(getCurrentPaymentStatus())}</span>
 						</div>
 						<!--<div class="kv-row">
 							<span class="kv-key">Order Status: </span>

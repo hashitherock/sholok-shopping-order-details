@@ -28,3 +28,5 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+- Keep the uploaded order page and its behavior in standalone HTML with Vanilla JavaScript; the existing iframe preserves the original design without adding services or dependencies.
